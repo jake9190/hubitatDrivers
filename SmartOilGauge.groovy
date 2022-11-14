@@ -10,12 +10,15 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  *
- * Jake Welch    v0.1     Initial version
+ * Jake Welch    v1.0    2022-06-02     Initial version
  *
 */
 
 metadata {
     definition (name: "Smart Oil Gauge", namespace: "jake9190", author: "Jake Welch", importUrl: "<TBD>") {
+        capability "Switch"       // For Homebridge compat
+        capability "Switch Level" // For Homebridge compat
+        
         attribute  "TankName",           "string"
         attribute  "Battery",            "string"
         attribute  "CurrentTankPercent", "number"
@@ -30,29 +33,51 @@ metadata {
     }
     
     preferences {
-       input name: "username", type: "text", title: "Username", description: "Your User Name", required: true
-       input name: "password", type: "password", title: "Password", description: "Your password",required: true
-       input name: "tokenRefreshInDays", type: "number", title: "Token Expiration", description: "Force Token Refresh After X Days", defaultValue: 7, range: "1..30", required: true
-       input name: "refreshHours", type: "number", title: "Refresh Frequency (hours)", description: "Data refresh frequency in hours", defaultValue: 2, range: "0..24", required: true
-       input name: "debugOutput", type: "bool", title: "Enable debug logging?", defaultValue: true
+        input name: "username", type: "text", title: "Username", description: "Your User Name", required: true
+        input name: "password", type: "password", title: "Password", description: "Your password",required: true
+        input name: "tokenRefreshInDays", type: "number", title: "Token Expiration", description: "Force Token Refresh After X Days", defaultValue: 7, range: "1..30", required: true
+        input name: "refreshHours", type: "number", title: "Refresh Frequency (hours)", description: "Data refresh frequency in hours", defaultValue: 2, range: "0..24", required: true
+        input (
+            name: "configLoggingLevelIDE",
+            title: "IDE Live Logging Level:\nMessages with this level and higher will be logged to the IDE.",
+            type: "enum",
+            options: [
+                "0" : "None",
+                "1" : "Error",
+                "2" : "Warning",
+                "3" : "Info",
+                "4" : "Debug",
+                "5" : "Trace"
+            ],
+            defaultValue: "3",
+            required: false
+        )
     }
 }
 
 def installed()
 {
-    log.debug "Driver installed"
+    logger("Driver installed", "debug")
+    on()
 }
 
-void refresh() {
-    if (debugOutput) log.debug "'refresh'"
-    
-    getTankStatus()    
+void updated() {
+    logger("updated()", "debug")
+    logger("debug logging is: ${debugOutput == true}", "debug")
+    on()
     scheduleTasks()
 }
 
 // Initialize after hub power cycle to force a poll cycle
 void initialize() {
     scheduleTasks()
+}
+
+void refresh() {
+    logger("'refresh'", "debug")
+    
+    // TOOD: retry
+    getTankStatus()
 }
 
 void scheduleTasks()
@@ -64,61 +89,98 @@ void scheduleTasks()
     
     def Minute = ( new Date().format( "m" ) as int )
     
-    unschedule()
     schedule( "${Second} ${Minute} */${ refreshHours } ? * *", "refresh" )
-}
-
-void updated() {
-    if (debugOutput) log.debug "updated()"
-    if (debugOutput) log.debug "debug logging is: ${debugOutput == true}"
-    scheduleTasks()
 }
 
 /******************************************************/
 
 def getTankStatus()
 {
-    log.debug "GetTankStatus()"
+    logger("GetTankStatus()", "debug")
     if (cookieIsValid() == false)
     {
-        log.debug "Refreshing token"
+        logger("Refreshing token", "debug")
         if (refreshToken() == false)
         {
-            log.error "Cannot proceed without a valid cookie"
-            return
+            logger("Cannot proceed without a valid cookie", "error")
+            return false
         }
     }
     
     def returnSuccess = true
-    log.info "getTankStatus()"
+    
+    logger("Getting app page", "debug")
+    
+    Map getParams = [
+        uri: "https://app.smartoilgauge.com/app.php",
+        headers: [
+            'Content-Type'       : 'application/x-www-form-urlencoded; charset=UTF-8',
+            'Accept'             : 'application/json, text/javascript, */*; q=0.01',
+            'Accept-Encoding'    : 'gzip, deflate, br',
+            'Accept-Language'    : 'en-US,en;q=0.9',
+            'DNT'                : '1',
+            'Origin'             : "https://app.smartoilgauge.com",
+            'Referer'            : "https://app.smartoilgauge.com/login.php",
+            'Sec-Fetch-Dest'     : "document",
+            'Sec-Fetch-Mode'     : "navigate",
+            'Sec-Fetch-Site'     : "same-origin",
+            'X-Requested-With'   : "XMLHttpRequest",
+            'sec-ch-ua'          : "\" Not A;Brand\";v=\"99\", \"Chromium\";v=\"102\", \"Google Chrome\";v=\"102\"",
+            'sec-ch-ua-mobile'   : "?0",
+            'sec-ch-ua-platform' : "\"Windows\"",
+            'User-Agent'         : 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.61 Mobile Safari/537.36',
+            'Cookie'             : state.authCookies
+        ]
+    ]
+    
+    httpGet(getParams) { response -> 
+        responseData = response.getData()
+        if (response.status != 200 || responseData.Status)
+        {
+            logger("Get of app page failed with: ${response}", "debug")
+            if (response.status == 401 || response.status == 408 || responseData.Status == 401)
+            {
+                state.authFailed = true
+            }
+            
+            return false
+        }
+    }
+    
+    logger("Calling Ajax API", "info")
+    
     Map params = [
         uri: "https://app.smartoilgauge.com/ajax/main_ajax.php",
         headers: [
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'DNT': '1',
-            'Origin': "https://app.smartoilgauge.com",
-            'Referer': "https://app.smartoilgauge.com/app.php",
-            'Sec-Fetch-Dest': "empty",
-            'Sec-Fetch-Mode': "cors",
-            'Sec-Fetch-Site': "same-origin",
-            'X-Requested-With' : "XMLHttpRequest",
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.61 Mobile Safari/537.36',
-            'Cookie': state.authCookies
+            'Content-Type'       : 'application/x-www-form-urlencoded; charset=UTF-8',
+            'Accept'             : 'application/json, text/javascript, */*; q=0.01',
+            'Accept-Encoding'    : 'gzip, deflate, br',
+            'Accept-Language'    : 'en-US,en;q=0.9',
+            'DNT'                : '1',
+            'Origin'             : "https://app.smartoilgauge.com",
+            'Referer'            : "https://app.smartoilgauge.com/app.php",
+            'Sec-Fetch-Dest'     : "empty",
+            'Sec-Fetch-Mode'     : "cors",
+            'Sec-Fetch-Site'     : "same-origin",
+            'X-Requested-With'   : "XMLHttpRequest",
+            'sec-ch-ua'          : "\" Not A;Brand\";v=\"99\", \"Chromium\";v=\"102\", \"Google Chrome\";v=\"102\"",
+            'sec-ch-ua-mobile'   : "?0",
+            'sec-ch-ua-platform' : "\"Windows\"",
+            'User-Agent'         : 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.61 Mobile Safari/537.36',
+            'Cookie'             : state.authCookies
         ],
         body: "action=get_tanks_list&tank_id=0"
     ]
     
+    
     httpPost(params) { response -> 
         responseData = response.getData()
-        if (debugOutput) log.debug "Request Status: $response.status, Body: ${responseData}"
+        logger("Request Status: $response.status, Body: ${responseData}", "debug")
         
         // API always returns 200 with status code in the response body
-        if (responseData.status == 408 || responseData.status == 401)
+        if (responseData.Status == 408 || responseData.Status == 401)
         {
-            log.warn "Login failed: ${responseData.message}"
+            logger("Login failed: ${responseData}", "warning")
             state.authFailed = true
             returnSuccess = false
         }
@@ -127,34 +189,36 @@ def getTankStatus()
             try {        
                 if (responseData.result == "ok")
                 {
+                    logger("Updating state values", "debug")
+                    
                     def tankName = responseData.tanks[0].tank_name
                     def tankBattery = responseData.tanks[0].battery
                     def tankCurrGallons = responseData.tanks[0].sensor_gallons.toFloat()
                     def tankFillableGallons = responseData.tanks[0].fillable.toInteger()
                     def tankSizeGallons = responseData.tanks[0].nominal.toInteger()
                     def tankCurrPercent = ((tankCurrGallons / tankFillableGallons) * 100).round(3)
-                    def tankLastReading = responseData.tanks[0].sensor_rt // new Date().parse("yyyy-MM-dd HH:mm:ss", status.tanks[0].sensor_rt) // Format: 2022-05-31 07:57:50
+                    def tankLastReading = new Date().parse("yyyy-MM-dd HH:mm:ss", responseData.tanks[0].sensor_rt) // Format: 2022-05-31 07:57:50
                 
-                    sendEvent(name: 'TankName', value: tankName)
-                    sendEvent(name: 'Battery', value: tankBattery)
-                    sendEvent(name: 'CurrentTankPercent', value: tankCurrPercent, unit:"%")
-                    sendEvent(name: 'CurrentGallons', value: tankCurrGallons)
-                    sendEvent(name: 'FillableGallons', value: tankFillableGallons)
-                    sendEvent(name: 'TankSizeGallons', value: tankSizeGallons)
-                    sendEvent(name: 'lastReadTime', value: tankLastReading)
-                    
-                    lastApiCheck = new Date()
+                    sendEvent(name: 'TankName',           value: tankName)
+                    sendEvent(name: 'Battery',            value: tankBattery)
+                    sendEvent(name: 'CurrentTankPercent', value: tankCurrPercent as Double, unit:"%")
+                    sendEvent(name: 'level',              value: tankCurrPercent as Double, unit:"%")
+                    sendEvent(name: 'CurrentGallons',     value: tankCurrGallons as Double)
+                    sendEvent(name: 'FillableGallons',    value: tankFillableGallons as Integer)
+                    sendEvent(name: 'TankSizeGallons',    value: tankSizeGallons as Integer)
+                    sendEvent(name: 'lastTankReadTime',   value: tankLastReading as Date)
+                    sendEvent(name: 'lastApiCheck',       value: new Date() as Date)
                 }
                 else
                 {
                     returnSuccess = false
-                    log.error "Failed to retrieve status: ${responseData.message}"   
+                    logger("Failed to retrieve status: ${responseData.message}", "error")
                 }
             }
             catch(e)
             {
                 returnSuccess = false
-                log.error "getTankStatus() request failed: ${e}"
+                logger("getTankStatus() request failed: ${e}", "error")
             }
         }
     }
@@ -165,7 +229,7 @@ def getTankStatus()
 
 def cookieIsValid()
 {
-    log.debug "Checking token status"
+    logger("Checking token status", "debug")
     
     def lastUpdate = state?.lastTokenUpdate ? new Date().parse("yyyy-MM-dd'T'HH:mm:ss+0000", state.lastTokenUpdate) : new Date()
     def forceRefreshAt = lastUpdate.plus(tokenRefreshInDays.toInteger())
@@ -175,7 +239,7 @@ def cookieIsValid()
     def authFailedCheck = (authFailed == "false")
     def result = (forceUpdateCheck && authFailedCheck)
     
-    log.debug "Result: ${result}, lastUpdate: ${lastUpdate}, forceRefreshAt: ${forceRefreshAt}, forceUpdateCheck: ${forceUpdateCheck}, authFailed: ${authFailed}, authFailedCheck = ${authFailedCheck}"
+    logger("Result: ${result}, lastUpdate: ${lastUpdate}, forceRefreshAt: ${forceRefreshAt}, forceUpdateCheck: ${forceUpdateCheck}, authFailed: ${authFailed}, authFailedCheck = ${authFailedCheck}", "debug")
     
     return result
 }
@@ -183,13 +247,13 @@ def cookieIsValid()
 def refreshToken()
 {
     if (!login() ) {
-        log.warn "Login attempt failed"
+        logger("Login attempt failed", "warn")
         if ( !login() ) {
 			return false
 		}
 	}
     
-    log.debug "Finished refreshToken()"    
+    logger("Finished refreshToken()", "debug")
     return true
 }
 
@@ -198,11 +262,11 @@ Map parseCookie(cookie)
     def cookieMap = [:]
     def foundName = false
     
-    log.debug "Parsing cookie: ${cookie}"
+    logger("Parsing cookie: ${cookie}", "debug")
     def cookieParams = cookie.split(';')
     if (cookieParams.size() < 2)
     {
-        log.error "Cookie format is invalid: ${cookie}"
+        logger("Cookie format is invalid: ${cookie}", "error")
     }
     
     cookieParams.each { param ->
@@ -236,7 +300,7 @@ Map parseCookie(cookie)
                     cookieMap["path"] = values[1]
                     break;
                  default: 
-                    log.warning "The cookie param is unknown (${values[0]})"
+                    logger("The cookie param is unknown (${values[0]})", "warn")
                     break;
             }
         }
@@ -248,17 +312,17 @@ Map parseCookie(cookie)
 void refreshAuth() {
     state.clear()
     login()
-    log.debug "Finished auth refresh"
+    logger("Finished auth refresh", "debug")
 }
 
 def login() {
-    if (debugOutput) log.debug "login()"
+    logger("login()", "debug")
 	Boolean returnSuccess = true
     
     Map loginTokens = updateLoginTokens()
     if (loginTokens["success"] != true)
     {
-        log.error "Cannot proceed with login"
+        logger("Cannot proceed with login", "error")
     }
     
     def phpsessid = loginTokens["phpCookie"]
@@ -279,7 +343,9 @@ def login() {
             'Sec-Fetch-Dest': "empty",
             'Sec-Fetch-Mode': "cors",
             'Sec-Fetch-Site': "same-origin",
-            'Origin': "https://app.smartoilgauge.com",
+            'sec-ch-ua'          : "\" Not A;Brand\";v=\"99\", \"Chromium\";v=\"102\", \"Google Chrome\";v=\"102\"",
+            'sec-ch-ua-mobile'   : "?0",
+            'sec-ch-ua-platform' : "\"Windows\"",
             'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.61 Mobile Safari/537.36',
             'Cookie': "PHPSESSID=${phpsessid}"
         ],
@@ -287,53 +353,53 @@ def login() {
         followRedirects: false
     ]
 
-    log.debug "Params: $params.headers $params.body"
+    logger("Params: $params.headers $params.body", "debug")
     def sessionCookies = "PHPSESSID=${phpsessid}"
     def cookieCount = 1
 
     try {
         httpPost(params) {
             response ->
-            if (debugOutput) log.debug "Request was successful, $response.status, Cookies: ${response.getHeaders('Set-Cookie')}, Body: ${response.getData()}"
+            logger("Request was successful, $response.status, Cookies: ${response.getHeaders('Set-Cookie')}, Body: ${response.getData()}", "debug")
 
             response.getHeaders('Set-Cookie').each { cookie ->
-                log.debug "Cookie: ${cookie.value}"
+                logger("Cookie: ${cookie.value}", "debug")
                 
                 def cookieMap = parseCookie(cookie.value)
                 
                 if (!cookieMap["expires"] && cookieMap["expires"] < newDate) {
-                    log.debug "Skipping cookie due to expiration: ${cookie}"
+                    logger("Skipping cookie due to expiration: ${cookie}", "debug")
                 }
                 else
                 {
-                    if (debugOutput) log.debug "Adding cookie to collection: ${cookieMap}"
+                    logger("Adding cookie to collection: ${cookieMap}", "debug")
                     sessionCookies += "; ${cookieMap["name"]}=${cookieMap["value"]}"
                     cookieCount = cookieCount + 1
                 }
             }
             
             if (cookieCount < 2) {
-                log.warn "Number of cookies is fewer than expected: ${cookieCount}"
+                logger("Number of cookies is fewer than expected: ${cookieCount}", "warn")
 			    returnSuccess = false
             }
             
-            log.debug "cookies: ${sessionCookies}"
+            logger("cookies: ${sessionCookies}", "debug")
         }
     } catch (e) {
-        log.warn "Something went wrong during login: $e"
+        logger("Something went wrong during login: $e", "warn")
         returnSuccess = false
 	}
     
     if (returnSuccess)
     {
-        log.debug "Success. Updating cookies in state."
+        logger("Success. Updating cookies in state.", "debug")
         state.authCookies = sessionCookies
         state.lastTokenUpdate = new Date()
         state.authFailed = false
     }
     else
     {
-        log.error "Login failed, not updating cookies"
+        logger("Login failed, not updating cookies", "error")
     }
         
 	return returnSuccess
@@ -358,7 +424,7 @@ Map updateLoginTokens()
         // TODO: Doesn't check for PHPSESSID
         // PHPSESSID=5a9ccd9bc79b229b1902343d7753c4ce; path=/
         response.getHeaders('Set-Cookie').each { cookie ->
-            log.debug "Cookie: ${cookie.value}"                
+            logger("Cookie: ${cookie.value}", "debug")
             def cookieMap = parseCookie(cookie.value)
             phpCookie = cookieMap["value"]
         }
@@ -374,19 +440,48 @@ Map updateLoginTokens()
         loginTokens["phpCookie"] = phpCookie
         loginTokens["success"] = true
         state.LastLoginTokenUpdate = new Date()
-        log.debug "Login tokens updated: headers: ${authCookie}, nonce: ${ccf_nonce}"  
+        logger("Login tokens updated: headers: ${authCookie}, nonce: ${ccf_nonce}", "debug")
     }
     else
     {
         loginTokens["success"] = false
-        log.error "Unable to refresh login tokens"
+        logger("Unable to refresh login tokens", "error")
     }
     
     return loginTokens
+}
+
+def on() {
+    sendEvent(name: 'switch', value: "on")
 }
 
 /******************************************************/
 
 def urlEncode(String) {
     return java.net.URLEncoder.encode(String, "UTF-8")
+}
+
+private logger(msg, level = "debug") {
+
+    switch(level) {
+        case "error":
+            if (state.loggingLevelIDE >= 1) log.error msg
+            break
+        case "warning":
+        case "warn":
+            if (state.loggingLevelIDE >= 2) log.warn msg
+            break
+        case "info":
+            if (state.loggingLevelIDE >= 3) log.info msg
+            break
+        case "debug":
+            if (state.loggingLevelIDE >= 4) log.debug msg
+            break
+        case "trace":
+            if (state.loggingLevelIDE >= 5) log.trace msg
+            break
+        default:
+            log.debug msg
+            break
+    }
 }
