@@ -15,9 +15,10 @@
 */
 
 metadata {
-    definition (name: "Smart Oil Gauge", namespace: "jake9190", author: "Jake Welch", importUrl: "<TBD>") {
+    definition (name: "Smart Oil Gauge", namespace: "jake9190", author: "Jake", importUrl: "https://raw.githubusercontent.com/jake9190/hubitatDrivers/main/SmartOilGauge.groovy") {
         capability "Switch"       // For Homebridge compat
         capability "Switch Level" // For Homebridge compat
+        capability "Health Check"
         
         attribute  "TankName",           "string"
         attribute  "Battery",            "string"
@@ -27,6 +28,7 @@ metadata {
         attribute  "TankSizeGallons",    "number"
         attribute  "lastTankUpdate",     "string"
         attribute  "lastApiCheck",       "string"
+        attribute  "healthStatus", "enum", [ "unknown", "offline", "online" ]
         
         capability "Refresh"
 		command    "refreshAuth"
@@ -172,7 +174,6 @@ def getTankStatus()
         body: "action=get_tanks_list&tank_id=0"
     ]
     
-    
     httpPost(params) { response -> 
         responseData = response.getData()
         logger("Request Status: $response.status, Body: ${responseData}", "debug")
@@ -208,17 +209,20 @@ def getTankStatus()
                     sendEvent(name: 'TankSizeGallons',    value: tankSizeGallons as Integer)
                     sendEvent(name: 'lastTankReadTime',   value: tankLastReading as Date)
                     sendEvent(name: 'lastApiCheck',       value: new Date() as Date)
+                    sendEvent(name: 'healthStatus',       value: "online")
                 }
                 else
                 {
                     returnSuccess = false
                     logger("Failed to retrieve status: ${responseData.message}", "error")
+                    sendEvent(name: 'healthStatus', value: "offline")  // TODO: Set after multiple failures
                 }
             }
             catch(e)
             {
                 returnSuccess = false
                 logger("getTankStatus() request failed: ${e}", "error")
+                sendEvent(name: 'healthStatus', value: "offline")  // TODO: Set after multiple failures
             }
         }
     }
