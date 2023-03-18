@@ -1,5 +1,5 @@
 /**
- *  HTTP Presence Sensor v1.1
+ *  HTTP Presence Sensor v2.0
  *
  *  Copyright 2019 Joel Wetzel
  *
@@ -12,6 +12,9 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ * v1.0 [Joel Wetzel] Initial version
+ * v2.0 [Jake Welch] Add HealthStatus, retries, check intervals, updated http status codes
+ *
  */
 
 	
@@ -19,8 +22,8 @@ metadata {
 	definition (name: "HTTP Presence Sensor - Modified", namespace: "joelwetzel", author: "Joel Wetzel") {
 		capability "Refresh"
 		capability "Sensor"
-        capability "Presence Sensor"
-        capability 'Health Check'
+		capability "Presence Sensor"
+		capability 'Health Check'
         
  		command    "arrived"
  		command    "departed"
