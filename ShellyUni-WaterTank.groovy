@@ -17,7 +17,7 @@ metadata {
     }
 
     preferences {        
-        input name: "apiUri", type: "text", title: "API URI", description: "The path to the json API", defaultValue: "http://192.168.1.125/status", required: true
+        input name: "apiUri", type: "text", title: "API URI", description: "The path to the json API", defaultValue: "http://192.168.1.136/status", required: true
         input name: "tankMinVoltage", type: "decimal", title: "Tank Min Voltage", description: "The minimum voltage reading expected", defaultValue: 0, range: "0..10", required: true
         input name: "tankMaxVoltage", type: "decimal", title: "Tank Max Voltage", description: "The maximum voltage reading expected", defaultValue: 6.5, range: "1..10", required: true
         input name: "tankSize", type: "number", title: "Tank Size", description: "The size of the tank in gallons", defaultValue: 142, required: true
@@ -43,43 +43,23 @@ metadata {
 }
 
 def installed() {
+    logger("'installed'", "debug")
     scheduleTasks()
     on()
 }
 
 def updated() {
+    logger("'updated'", "debug")
     scheduleTasks()
     on()
 }
 
-def setLevel(value, rate = null) {
-    logger("setLevel() is read-only and not implemented", "error")
+def refresh() {
+    logger("'installed'", "debug")
+    UpdateStatus()
 }
 
-private sendTankEvent(voltage) {
-    Double voltMin = tankMinVoltage
-    Double voltMax = tankMaxVoltage
-    Double previousVolts = device.currentValue("volts") ?: -1
-    
-    Double percent = (((voltage - voltMin) / voltMax) * 100)
-    Double gallons = (percent * tankSize) / 100
-    
-    logger("previousVolt=${previousVolts}, voltMin=${voltMin}, voltMax=${voltMax}, volts=${voltage}, percent=${percent}, gallons=${gallons}", "debug")
-    
-    Double voltEventMin = previousVolts - voltEventThreshold
-    Double voltEventMax = previousVolts + voltEventThreshold
-    
-    sendEvent(name: 'level',   value: percent.round(2) as Double, unit:"%")
-    sendEvent(name: 'volts', value: voltage.round(2) as Double, unit:"v")
-    sendEvent(name: 'gallons', value: gallons.round(1))
-    sendEvent(name: 'healthStatus', value: "online")
-    state.lastUpdate = new Date()
-}
-
-def refresh()
-{    
-    logger("'refresh'", "debug")
-        
+def UpdateStatus() {
     Map requestParams = [
         uri: apiUri,
         headers: [
@@ -88,31 +68,61 @@ def refresh()
         ],
         followRedirects: false
     ]
+    
+    asynchttpGet( "ParseStatusRequest", requestParams)
+}
 
-    try {
-        httpGet(requestParams) {
-            response ->
-                responseData = response.getData()
-                logger("Request was successful, $response.status, Body: ${responseData}", "debug")
-                state.FailureCount = 0
-            
-                Double voltage = responseData.adcs[0].voltage
-                state.uptime = responseData.uptime
-                state.WifiRSSI = responseData.wifi_sta.rssi
-            
-                logger("Voltage = ${voltage}", "debug")
-            
-                sendTankEvent(voltage)
-        }
-    } catch (e) {
-        failureCount = (state.FailureCount + 1) ?: 0
-        logger("Failure #${failureCount}: $e", "error")
-        state.FailureCount = failureCount
+def ParseStatusRequest( resp, data ) {
+    def statusCode = resp.getStatus()
+    if (statusCode == 200 && resp.data != null) {
+        state.clear()
         
+        responseData = parseJson( resp.data )
+        logger("Request was successful, ${ statusCode }, Body: ${responseData}", "debug")
+        state.FailureCount = 0
+            
+        Double voltage = responseData.adcs[0].voltage
+        //state.version = responseData.update.old_version
+        //state.currentVersion = responseData.update.new_version
+        //state.hasUpdate = responseData.update.has_update
+        //state.uptime = responseData.uptime
+        //state.WifiRSSI = responseData.wifi_sta.rssi
+            
+        sendTankEvent(voltage)
+    } else {
+        failureCount = (state.FailureCount + 1) ?: 0
+        logger("Shelly Uni: ${ statusCode } Failure #${failureCount}: ${ resp }", "error")
+        state.FailureCount = failureCount
         if (failureCount > offlineThreshold) {
             sendEvent(name: 'healthStatus', value: "offline")
         }
-	}
+    }
+}
+
+private sendTankEvent(Double voltage) {
+    Double voltMin = tankMinVoltage
+    Double voltMax = tankMaxVoltage
+    Double previousVolts = device.currentValue("volts") ?: -1
+    
+    Double percent = (((voltage - voltMin) / voltMax) * 100)
+    Double gallons = (percent * tankSize) / 100
+    
+    Double voltEventMin = previousVolts - voltEventThreshold
+    Double voltEventMax = previousVolts + voltEventThreshold
+    
+    logger("previousVolt=${previousVolts}, voltMin=${voltMin}, voltMax=${voltMax}, volts=${voltage}, voltEventMin=${voltEventMin}, voltEventMax=${voltEventMax}, percent=${percent}, gallons=${gallons}", "debug")
+    
+    if (voltage < voltEventMin || voltage > voltEventMax || previousVolts == -1) {
+        //logger("sending event", "debug")
+        sendEvent(name: 'level',   value: percent.round() as Double, unit:"%")
+        sendEvent(name: 'volts', value: voltage.round(1) as Double, unit:"v")
+        sendEvent(name: 'gallons', value: gallons.round())
+    } else {
+        //logger("Skipped sending event", "debug")
+    }
+    
+    sendEvent(name: 'healthStatus', value: "online")
+    state.lastUpdate = new Date()
 }
 
 void scheduleTasks()
@@ -131,6 +141,10 @@ def off() {
  sendEvent(name: 'switch', value: "off")
  pauseExecution(500)
  sendEvent(name: 'switch', value: "on")
+}
+
+def setLevel(value, rate = null) {
+    logger("setLevel() is read-only and not implemented", "error")
 }
 
 /******************************************************/
