@@ -16,7 +16,7 @@ metadata {
         attribute  "healthStatus", "enum", [ "unknown", "offline", "online" ]
     }
 
-    preferences {        
+    preferences {
         input name: "apiUri", type: "text", title: "API URI", description: "The path to the json API", defaultValue: "http://192.168.1.136/status", required: true
         input name: "tankMinVoltage", type: "decimal", title: "Tank Min Voltage", description: "The minimum voltage reading expected", defaultValue: 0, range: "0..10", required: true
         input name: "tankMaxVoltage", type: "decimal", title: "Tank Max Voltage", description: "The maximum voltage reading expected", defaultValue: 6.5, range: "1..10", required: true
@@ -55,7 +55,7 @@ def updated() {
 }
 
 def refresh() {
-    logger("'installed'", "debug")
+    logger("'refresh'", "debug")
     UpdateStatus()
 }
 
@@ -91,11 +91,12 @@ def ParseStatusRequest( resp, data ) {
         sendTankEvent(voltage)
     } else {
         failureCount = (state.FailureCount + 1) ?: 0
-        logger("Shelly Uni: ${ statusCode } Failure #${failureCount}: ${ resp }", "error")
         state.FailureCount = failureCount
         if (failureCount > offlineThreshold) {
             sendEvent(name: 'healthStatus', value: "offline")
         }
+        
+        logger("Shelly Uni: ${ statusCode } Failure #${failureCount}: ${ resp }", "error")
     }
 }
 
@@ -107,26 +108,26 @@ private sendTankEvent(Double voltage) {
     Double percent = (((voltage - voltMin) / voltMax) * 100)
     Double gallons = (percent * tankSize) / 100
     
+    // TODO: Make this more reliable
     Double voltEventMin = previousVolts - voltEventThreshold
     Double voltEventMax = previousVolts + voltEventThreshold
     
     logger("previousVolt=${previousVolts}, voltMin=${voltMin}, voltMax=${voltMax}, volts=${voltage}, voltEventMin=${voltEventMin}, voltEventMax=${voltEventMax}, percent=${percent}, gallons=${gallons}", "debug")
     
     if (voltage < voltEventMin || voltage > voltEventMax || previousVolts == -1) {
-        //logger("sending event", "debug")
+        logger("sending event", "debug")
         sendEvent(name: 'level',   value: percent.round() as Double, unit:"%")
         sendEvent(name: 'volts', value: voltage.round(1) as Double, unit:"v")
         sendEvent(name: 'gallons', value: gallons.round())
     } else {
-        //logger("Skipped sending event", "debug")
+        logger("Skipped sending event", "debug")
     }
     
     sendEvent(name: 'healthStatus', value: "online")
     state.lastUpdate = new Date()
 }
 
-void scheduleTasks()
-{
+void scheduleTasks() {
     unschedule()
     Random rnd = new Random()
     schedule( "${rnd.nextInt(59)} */${ refreshInMinutes } * ? * *", "refresh" )
