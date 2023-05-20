@@ -34,6 +34,7 @@ metadata {
 
         // Current conditions (from API)
         attribute 'conditions', 'string'
+        attribute 'yesterdayPrecipLocalTotal', 'number'
         
         // Current conditions (from websocket)
         attribute 'feelsLike', 'string'
@@ -298,13 +299,11 @@ void webSocketStatus(String status){
     if (status.startsWith('failure: ')) {
         log.warn "failure message from web socket ${status}"
         state.connection = 'disconnected'
-        sendEvent(name: "healthStatus", value: "offline")
         reconnectWebSocket()
     }
     else if (status == 'status: open') {
         log.info 'webSocket is open'
         state.connection = 'connected'
-        sendEvent(name: "healthStatus", value: "online")
 
         requestData()
 
@@ -315,12 +314,10 @@ void webSocketStatus(String status){
     else if (status == 'status: closing'){
         log.warn 'webSocket connection closing.'
         state.connection = 'closing'
-        sendEvent(name: "healthStatus", value: "offline")
     }
     else {
         log.warn "webSocket error: ${status}"
         state.connection = 'disconnected'
-        sendEvent(name: "healthStatus", value: "offline")
         reconnectWebSocket()
     }
 }
@@ -357,10 +354,13 @@ void healthCheck() {
         // check if there have been any observations in the last 3 minutes
         if(state.lastObservation >= now() - (3 * 60 * 1000)) {
             // healthy
+            sendEvent(name: "healthStatus", value: "online")
             logDebug 'healthCheck: healthy'
+            
         }
         else {
             // not healthy
+            sendEvent(name: "healthStatus", value: "offline")
             log.warn 'healthCheck: not healthy'
             reconnectWebSocket()
         }
@@ -424,6 +424,9 @@ def ProcessCurrentConditions( Data ){
         switch( it.key ){
 			case "conditions":
                 sendEvent( name: "conditions", value: "${ it.value }" )
+				break
+            case "precip_accum_local_yesterday":
+                sendEvent( name: "yesterdayPrecipLocalTotal", value: "${ it.value }" )
 				break
 			default:
 				break
