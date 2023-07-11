@@ -25,7 +25,7 @@ metadata {
         command "fixShadeState", [[name:"Shade*", type: "ENUM", description: "Shade", constraints: ["opening", "partially open", "closed", "open", "closing", "unknown"] ], 
                                  [name:"Position", type: "NUMBER", description: "Position", constraints: 0..100]]
 		command "toggle"
-        command "favoritePosition"
+        command "presetPosition"
     }
 }
 preferences {
@@ -71,7 +71,7 @@ def open() {
     runInMillis(changeTimeMs, 'openFinish')
 }
 
-def favorite() {
+def presetPosition() {
     parent.handlePreset(device)   
 }
 
