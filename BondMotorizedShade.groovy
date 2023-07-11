@@ -71,7 +71,7 @@ def open() {
     runInMillis(changeTimeMs, 'openFinish')
 }
 
-def favoritePosition() {
+def favorite() {
     parent.handlePreset(device)   
 }
 
@@ -85,7 +85,7 @@ def close() {
     unscheduleJobs()
 	swapOpenClose ? parent.handleOpen(device, false) : parent.handleClose(device, false)
     recordOpenCloseStart()
-    def lastPosition = device.currentValue("position", true)
+    def lastPosition = getLastPosition()
     
     def changeTimeMs = 10000
     
@@ -154,7 +154,7 @@ def stop() {
     unscheduleJobs()
     
     def currentState = device.currentValue("windowShade", true)
-    def lastPosition = device.currentValue("position", true)
+    def lastPosition = getLastPosition()
     def currentTime = new Date().getTime()
     def lastCommandTime = getLastOpenCloseStartTime()
     
@@ -253,8 +253,17 @@ Integer calculatePositionChangeMs(Number currentPosition, Number newPosition) {
     }
 }
 
-def setPosition(Number newPosition) {
+def getLastPosition() {
+    def lastPosition = device.currentValue("position", true)
+    if (lastPosition == null) {
+        def lastState = device.currentValue("windowShade", true)
+        lastPosition = (lastState == "closed" || lastState == "closing") ? 0 : 100
+    }
     
+    return lastPosition
+}
+
+def setPosition(Number newPosition) {
     unscheduleJobs()
     
     if (newPosition == 0) {
@@ -263,7 +272,7 @@ def setPosition(Number newPosition) {
         open()
     } else if (openTimeMs > 0 && closeTimeMs > 0) {
         def lastState = device.currentValue("windowShade", true)
-        def lastPosition = device.currentValue("position", true)
+        def lastPosition = getLastPosition()
         def lastRecorded = getLastOpenCloseStartTime() ?: 0
     
         def currentPosition = getCurrentShadePosition(lastState, lastPosition, lastRecorded, (new Date().getTime()))
