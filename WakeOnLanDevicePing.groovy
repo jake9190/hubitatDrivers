@@ -41,7 +41,6 @@ def refresh() {
 def setDeviceStateByPing() {
     if (myDeviceIp) {
         pingResult = sendPing(myDeviceIp, 3)
-        log.info pingResult
         if (pingResult.success > 0) {
             sendEvent(name: 'switch', value: "on")
         } else {
