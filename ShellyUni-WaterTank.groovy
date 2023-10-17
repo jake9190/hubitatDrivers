@@ -14,6 +14,8 @@ metadata {
         attribute  "volts",      "number"
         attribute  "gallons",    "number"
         attribute  "healthStatus", "enum", [ "unknown", "offline", "online" ]
+        
+        command "manualSetLevel", [[name:"value",type:"NUMBER", description:"", constraints:["NUMBER"]]]
     }
 
     preferences {
@@ -106,7 +108,7 @@ private sendTankEvent(Double voltage) {
     Double previousVolts = device.currentValue("volts") ?: -1
     
     Double percent = (((voltage - voltMin) / voltMax) * 100)
-    Double gallons = (percent * tankSize) / 100
+    Double gallons = (percent * tankSize) / 100.0
     
     // TODO: Make this more reliable
     Double voltEventMin = previousVolts - voltEventThreshold
@@ -116,9 +118,9 @@ private sendTankEvent(Double voltage) {
     
     if (voltage < voltEventMin || voltage > voltEventMax || previousVolts == -1) {
         logger("sending event", "debug")
-        sendEvent(name: 'level',   value: percent.round() as Double, unit:"%")
-        sendEvent(name: 'volts', value: voltage.round(1) as Double, unit:"v")
-        sendEvent(name: 'gallons', value: gallons.round())
+        sendEvent(name: 'level',   value: max(1.0 as Double, percent.round(1) as Double), unit:"%")
+        sendEvent(name: 'volts', value: voltage.round(1) as Double, unit:"volts")
+        sendEvent(name: 'gallons', value: gallons.round(), unit:"gallons")
     } else {
         logger("Skipped sending event", "debug")
     }
@@ -146,6 +148,10 @@ def off() {
 
 def setLevel(value, rate = null) {
     logger("setLevel() is read-only and not implemented", "error")
+}
+
+def manualSetLevel(value, rate = null) {
+    sendEvent(name: 'level',   value: value as Double, unit:"%")
 }
 
 /******************************************************/
