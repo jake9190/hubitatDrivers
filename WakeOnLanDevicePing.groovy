@@ -40,16 +40,18 @@ def refresh() {
 
 def setDeviceStateByPing() {
     if (myDeviceIp) {
-        pingResult = sendPing(myDeviceIp, 3)
+        pingResult = sendPing(myDeviceIp, 1)
         if (pingResult.success > 0) {
             sendEvent(name: 'switch', value: "on")
         } else {
             sendEvent(name: 'switch', value: "off")
         }
     }
+    else {
+        log.error "Device IP is not set, cannot perform ping"
+    }
 }
 
-// https://community.hubitat.com/t/2-2-7-icmp-ping-for-apps-and-drivers/70610
 def sendPing(ip, count = 3) {
 	hubitat.helper.NetworkUtils.PingData pingData = hubitat.helper.NetworkUtils.ping(ip, count)
 	def success = "nullResults"
@@ -84,17 +86,20 @@ def wake() {
         
         def attempts = 0
         def successful = false
+        
         while (attempts < pingWol) {
-            def results = sendPing(myDeviceIp, 2)
             attempts++
+            def results = sendPing(myDeviceIp, 1)
+                
             if (results.success > 0) {
                 successful = true
                 break
-            }            
-            pauseExecution(pingWolSeconds * 1000)            
+            }
+            pauseExecution(2000)
         }
         
         sendEvent(name: 'wolStatus', value: successful ? "success" : "failed")
+        sendEvent(name: 'switch', value: successful ? "on" : "off")
     } else {
         sendEvent(name: 'wolStatus', value: "unknown")
         sendEvent(name: 'switch', value: "off")
