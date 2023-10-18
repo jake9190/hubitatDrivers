@@ -118,7 +118,9 @@ private sendTankEvent(Double voltage) {
     
     if (voltage < voltEventMin || voltage > voltEventMax || previousVolts == -1) {
         logger("sending event", "debug")
-        sendEvent(name: 'level',   value: max(1.0 as Double, percent.round(1) as Double), unit:"%")
+        
+        // Switch is always 'on' to support Homekit, and 0% shows up as 100%. Setting the minimum to 1% to workaround this.
+        sendEvent(name: 'level',   value: Math.max(1.0 as Double, percent.round(0) as Double), unit:"%")
         sendEvent(name: 'volts', value: voltage.round(1) as Double, unit:"volts")
         sendEvent(name: 'gallons', value: gallons.round(), unit:"gallons")
     } else {
