@@ -352,7 +352,7 @@ void requestData() {
 void healthCheck() {
     if (state.lastObservation != null) {
         // check if there have been any observations in the last 3 minutes
-        if(state.lastObservation >= now() - (3 * 60 * 1000)) {
+        if(state.lastObservation >= now() - (10 * 60 * 1000)) {
             // healthy
             sendEvent(name: "healthStatus", value: "online")
             logDebug 'healthCheck: healthy'
