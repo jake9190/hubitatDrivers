@@ -126,7 +126,17 @@ def initialize() {
 	subscribeSensorEvents()	
 	
 	def refreshEvery = refreshInterval ?: 30
-    schedule("0/${refreshEvery} * * * * ? *", updateDevices)
+    
+    def hours = refreshEvery / 3600
+    def hoursCron = hours > 0 ? "0/${hours}" : "*"
+    
+    def minutes = refreshEvery / 60
+    def minutesCron = minutes > 0 ? "0/${minutes}" : "*"
+    
+    def seconds = refreshEvery - (hours * 3660) - (minutes * 60)
+    def secondsCron = seconds > 0 ? "0/${seconds}" : "*"
+    
+    schedule("${secondsCron} ${minutesCron} * * * ? *", updateDevices)
 }
 
 def getHubId() {
