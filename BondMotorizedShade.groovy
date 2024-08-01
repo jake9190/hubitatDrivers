@@ -33,6 +33,7 @@ preferences {
 	input("responseTimeMs", "number", title: "The time it takes for the shade to respond in ms", defaultValue:0)
 	input("closeTimeMs", "number", title: "The time it takes to close in ms", defaultValue:0)
 	input("openTimeMs", "number", title: "The time it takes to open in ms", defaultValue:0)
+	input("retryCommand", "bool", title: "Send commands twice", defaultValue:false)
 }
 
 def recordOpenCloseStart() {
@@ -55,13 +56,17 @@ def open() {
     unscheduleJobs()
 	swapOpenClose ? parent.handleClose(device, false) : parent.handleOpen(device, false)
     recordOpenCloseStart()
+    if(retryCommand) {
+        pauseExecution(10)
+        swapOpenClose ? parent.handleClose(device, false) : parent.handleOpen(device, false)
+    }
     
     def changeTimeMs = 10000
     
     if (openTimeMs > 0) {
         def currentPosition = device.currentValue("position", true) >= 0 ? device.currentValue("position", true) : 0
         changeTimeMs = calculatePositionChangeMs(currentPosition, 100)
-        if (changeTimeMs > 100)
+        if (changeTimeMs > (100 + responseTimeMs))
         {
             sendEvent(name: "windowShade", value: "opening")
         }
@@ -85,6 +90,10 @@ def close() {
     unscheduleJobs()
 	swapOpenClose ? parent.handleOpen(device, false) : parent.handleClose(device, false)
     recordOpenCloseStart()
+    if(retryCommand) {
+        pauseExecution(10)
+        swapOpenClose ? parent.handleOpen(device, false) : parent.handleClose(device, false)
+    }
     def lastPosition = getLastPosition()
     
     def changeTimeMs = 10000
@@ -92,7 +101,7 @@ def close() {
     if (closeTimeMs > 0) {
         def currentPosition = lastPosition >= 0 ? lastPosition : 0
         changeTimeMs = calculatePositionChangeMs(currentPosition, 0)
-        if (changeTimeMs > 100)
+        if (changeTimeMs > (100 + responseTimeMs))
         {
             sendEvent(name: "windowShade", value: "closing")
         }
@@ -160,6 +169,10 @@ def stop() {
     
     // Always send the stop command, even if we don't think anything is happening
     parent.handleStop(device)
+    if(retryCommand) {
+        pauseExecution(5)
+        parent.handleStop(device)
+    }
     
     // We attempt to calculate the current state of the shade based on the provided preferences
     if (currentState == "opening") {
@@ -237,6 +250,10 @@ def startPositionChange(String direction) {
     else {
         log.warn "Unknown startPositionChange direction: ${direction}"
     }
+}
+
+def stopPositionChange() {
+    stop()
 }
 
 Integer calculatePositionChangeMs(Number currentPosition, Number newPosition) {
