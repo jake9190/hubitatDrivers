@@ -1006,7 +1006,12 @@ def fixShadeState(device, state)
 {
 	def bondId = getBondIdFromDevice(device)
 	logDebug "Setting shade state for ${bondId} to ${state}"
+    def switchState = (state == "open" || state == "opening" || state == "partially open") ? "on" : "off"
+    
+    device.sendEvent(name: "switch", value: switchState)
+    device.sendEvent(name: "windowShade", value: state)
 
+    /*
 	def open
 	if (state == "open")
 		open = 1
@@ -1026,6 +1031,7 @@ def fixShadeState(device, state)
 			device.sendEvent(name: "windowShade", value: "closed")
 		}
     }
+    */
 }
 
 def fixDirection(device, state) 
