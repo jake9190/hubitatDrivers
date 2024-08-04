@@ -285,7 +285,7 @@ def setPosition(Number newPosition) {
     
     if (newPosition == 0) {
         close()
-    } else if (newPosition == 100) {
+    } else if (newPosition == 100 || newPosition == 99) {
         open()
     } else if (openTimeMs > 0 && closeTimeMs > 0) {
         def lastState = device.currentValue("windowShade", true)
