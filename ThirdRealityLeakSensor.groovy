@@ -353,12 +353,10 @@ def checkHealth() {
         if (test != "online"){
             value = "online"
             logging("Creating HealthStatus event: ${value}  ","info")
-        sendEvent(name:"healthStatus",value: value , descriptionText:"${value} ${state.version}", isStateChange: true)
-        return    
+            sendEvent(name:"healthStatus",value: value , descriptionText:"${value} ${state.version}", isStateChange: true)
+            return    
         }
-    }
-    
-    if (state.lastCheckInMin >= checkMin) { 
+    } else if (state.lastCheckInMin >= checkMin) { 
       state.tries = state.tries + 1
       if (state.tries >=5){
         test = device.currentValue("healthStatus")
@@ -373,7 +371,7 @@ def checkHealth() {
      }
      
      runIn(2,ping)
-     if (state.tries <4){
+     if (state.tries >= 3){
          logging("Recovery in process Last checkin ${state.lastCheckInMin} min ago ","warn") 
          runIn(50, checkHealth)
      }
